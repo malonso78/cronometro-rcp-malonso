@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101820">
+<title>Cronómetro RCP</title>
+<style>
+:root{color-scheme:dark;--bg:#101820;--panel:#1b2933;--muted:#a9bac5}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100svh}
+main{max-width:620px;margin:auto;padding:calc(env(safe-area-inset-top) + 18px) 18px calc(env(safe-area-inset-bottom) + 24px);display:flex;flex-direction:column;gap:18px}
+header{text-align:center}
+h1{font-size:clamp(24px,6vw,34px);letter-spacing:.08em;margin:4px 0 0}
+.sub{color:var(--muted);font-size:12px;letter-spacing:.12em;margin-top:6px}
+.clock-wrap{background:#071017;border:1px solid #31424e;border-radius:24px;padding:22px 10px 18px;text-align:center;box-shadow:0 10px 30px #0005}
+#clock{font-variant-numeric:tabular-nums;font-weight:800;letter-spacing:-.06em;line-height:1;font-size:clamp(82px,22vw,148px);white-space:nowrap}
+#status{margin-top:12px;color:#b9c9d2;font-size:14px;min-height:20px}
+.buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+button{border:0;border-radius:18px;color:#fff;font-weight:800;font-size:clamp(17px,4.5vw,22px);min-height:92px;padding:16px 10px;touch-action:manipulation;box-shadow:0 5px 0 #0004}
+button:active{transform:translateY(2px);box-shadow:0 3px 0 #0004}
+button small{display:block;font-size:12px;font-weight:500;margin-top:6px;opacity:.9}
+#rcp{grid-column:1/-1;background:#16834b;min-height:82px}
+#shock{background:#b52d32}
+#epi{background:#a66a12}
+#reset{background:#344550;min-height:54px;font-size:15px}
+#summary{display:none}#summary.visible{display:block}
+.summary-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px}
+.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.metric{background:#071017;border-radius:12px;padding:12px}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{font-size:20px;font-variant-numeric:tabular-nums}
+.summary-list{display:flex;flex-direction:column;gap:7px}.summary-item{padding:9px 0;border-bottom:1px solid #ffffff18;font-size:14px}.summary-item:last-child{border:0}
+#summary details>summary{font-weight:800;cursor:pointer;font-size:17px}
+#beat{background:#285b80;min-height:64px;font-size:17px}
+#beat.active{background:#176b9f}
+section{background:var(--panel);border-radius:18px;padding:16px}
+h2{font-size:17px;margin:0 0 12px}
+#log{display:flex;flex-direction:column;gap:8px;max-height:220px;overflow:auto}
+.entry{display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ffffff18;padding:8px 0;font-size:14px}
+.entry:last-child{border:0}
+.entry strong{font-variant-numeric:tabular-nums}
+.empty{color:var(--muted);font-size:14px}
+ .note{color:var(--muted);font-size:11px;line-height:1.45;text-align:center}
+.footer{color:#71818b;font-size:11px;letter-spacing:.08em;text-align:center;margin-top:-8px;padding-bottom:4px}
+</style>
+</head>
+<body>
+<main>
+<header><h1>CRONÓMETRO RCP</h1><div class="sub">CONTROL DE TIEMPOS</div></header>
+<div class="clock-wrap" aria-live="off">
+  <div id="clock">00:00</div>
+  <div id="status">Listo para comenzar</div>
+</div>
+<div class="buttons">
+  <button id="rcp">INICIO DE RCP<small>Toca de nuevo para finalizar y guardar</small></button>
+  <button id="shock">DESCARGA<small>Cuenta atrás · 2 minutos</small></button>
+  <button id="epi">ADRENALINA<small>Cuenta atrás · 2 minutos</small></button>
+</div>
+<button id="beat" aria-pressed="false">▶ INICIAR RITMO 100/MIN<small>Pitido regular cada 0,6 segundos</small></button>
+<button id="reset">REINICIAR CRONÓMETRO</button>
+<section id="summary">
+  <details open>
+    <summary>RESUMEN DE LA RCP FINALIZADA</summary>
+    <div class="summary-grid" style="margin-top:12px">
+      <div class="metric"><span>Inicio</span><strong id="sumStart">—</strong></div>
+      <div class="metric"><span>Finalización</span><strong id="sumEnd">—</strong></div>
+      <div class="metric" style="grid-column:1/-1"><span>Duración total</span><strong id="sumDuration">—</strong></div>
+    </div>
+    <h3>Descargas y ciclos de 2 minutos</h3><div id="sumShocks" class="summary-list"></div>
+    <h3>Administraciones de adrenalina</h3><div id="sumEpi" class="summary-list"></div>
+  </details>
+</section>
+<section>
+  <h2>Registro de tiempos</h2>
+  <div id="log"><div class="empty">Todavía no hay eventos registrados.</div></div>
+</section>
+<div class="note">Herramienta auxiliar de cronometraje. Sigue siempre el protocolo de soporte vital y las indicaciones del equipo responsable.</div>
+<div class="footer">malonso27</div>
+</main>
+<script>
+(()=>{
+ const clock=document.getElementById('clock'),status=document.getElementById('status'),log=document.getElementById('log');
+ const rcpBtn=document.getElementById('rcp'),shockBtn=document.getElementById('shock'),epiBtn=document.getElementById('epi');
+ let mode='idle',countdownStartedAt=0,elapsed=0,raf=null,entries=[];
+ let rcpActive=false,rcpStartedAt=null,rcpEndedAt=null,shocks=[],adrenalines=[];
+ const fmt=ms=>{let s=Math.max(0,Math.floor(ms/1000));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')};
+ const stamp=t=>new Date(t).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+ const addLog=(label,time,detail='')=>{entries.unshift({label,time,detail});renderLog()};
+ function renderLog(){log.innerHTML='';if(!entries.length){log.innerHTML='<div class="empty">Todavía no hay eventos registrados.</div>';return}
+   entries.forEach(e=>{let d=document.createElement('div');d.className='entry';let a=document.createElement('span');a.textContent=e.label+' · '+e.time;let b=document.createElement('strong');b.textContent=e.detail;d.append(a,b);log.append(d)});
+ }
+ function stop(){if(raf)cancelAnimationFrame(raf);raf=null;}
+ function draw(){
+   const now=Date.now();
+   let ms=mode==='countdown'?Math.max(0,120000-(now-countdownStartedAt)):rcpActive?now-rcpStartedAt:elapsed;
+   clock.textContent=fmt(ms);
+   if(mode==='countdown'&&ms===0){mode='idle';status.textContent='Intervalo de 2 minutos finalizado';beep();addLog('Fin de intervalo',stamp(now),'02:00');}
+   else if(mode==='countdown')status.textContent='Cuenta atrás · '+fmt(ms)+' restantes';
+   else if(rcpActive)status.textContent='RCP en curso · tiempo total desde el inicio';
+   else if(rcpEndedAt)status.textContent='RCP finalizada · resumen disponible';
+   else status.textContent='Listo para comenzar';
+   if(rcpActive||mode==='countdown')raf=requestAnimationFrame(draw);
+ }
+ function beep(){try{let C=window.AudioContext||window.webkitAudioContext;if(C){let c=new C(),o=c.createOscillator(),g=c.createGain();o.connect(g);g.connect(c.destination);o.frequency.value=880;g.gain.value=.18;o.start();o.stop(c.currentTime+.6);}}catch(e){} if(navigator.vibrate)navigator.vibrate([250,120,250]);}
+ async function wake(){try{if('wakeLock'in navigator)await navigator.wakeLock.request('screen')}catch(e){}}
+ function addSummaryItem(container,text){const d=document.createElement('div');d.className='summary-item';d.textContent=text;container.append(d)}
+ function showSummary(){
+   document.getElementById('summary').classList.add('visible');
+   document.getElementById('sumStart').textContent=stamp(rcpStartedAt);
+   document.getElementById('sumEnd').textContent=stamp(rcpEndedAt);
+   document.getElementById('sumDuration').textContent=fmt(rcpEndedAt-rcpStartedAt);
+   const sh=document.getElementById('sumShocks'),ep=document.getElementById('sumEpi');sh.innerHTML='';ep.innerHTML='';
+   if(!shocks.length)addSummaryItem(sh,'No se registraron descargas.');
+   shocks.forEach((x,i)=>addSummaryItem(sh,`Descarga ${i+1}: ${stamp(x.time)} · inicio ciclo 2 min: ${stamp(x.cycleStart)}`));
+   if(!adrenalines.length)addSummaryItem(ep,'No se registraron administraciones.');
+   adrenalines.forEach((x,i)=>addSummaryItem(ep,`Adrenalina ${i+1}: ${stamp(x.time)}`));
+ }
+ rcpBtn.addEventListener('click',()=>{
+   if(rcpActive){rcpEndedAt=Date.now();rcpActive=false;elapsed=rcpEndedAt-rcpStartedAt;stop();if(mode==='countdown'){mode='idle'}clock.textContent=fmt(elapsed);status.textContent='RCP finalizada · resumen disponible';rcpBtn.innerHTML='INICIO DE RCP<small>Comenzar nuevo registro</small>';addLog('Fin de RCP',stamp(rcpEndedAt),fmt(elapsed));showSummary();return;}
+   // Nueva intervención: limpia los datos anteriores y comienza el registro.
+   stop();entries=[];shocks=[];adrenalines=[];rcpStartedAt=Date.now();rcpEndedAt=null;elapsed=0;rcpActive=true;mode='idle';document.getElementById('summary').classList.remove('visible');renderLog();
+   rcpBtn.innerHTML='FINALIZAR RCP<small>Guardar tiempo transcurrido</small>';addLog('Inicio de RCP',stamp(rcpStartedAt));wake();draw();
+ });
+ function startCountdown(label){const now=Date.now();
+   if(label==='Descarga'){shocks.push({time:now,cycleStart:now});addLog('Descarga',stamp(now),'Ciclo 2 min iniciado');}
+   if(label==='Adrenalina'){adrenalines.push({time:now});addLog('Adrenalina',stamp(now),'');}
+   mode='countdown';countdownStartedAt=now;clock.textContent='02:00';wake();stop();draw();
+ }
+ shockBtn.addEventListener('click',()=>startCountdown('Descarga'));
+ epiBtn.addEventListener('click',()=>startCountdown('Adrenalina'));
+ document.getElementById('reset').addEventListener('click',()=>{
+   if(!confirm('¿Reiniciar y borrar el registro actual?'))return;
+   stop();mode='idle';rcpActive=false;rcpStartedAt=null;rcpEndedAt=null;elapsed=0;entries=[];shocks=[];adrenalines=[];clock.textContent='00:00';status.textContent='Cronómetro reiniciado';rcpBtn.innerHTML='INICIO DE RCP<small>Toca para comenzar</small>';document.getElementById('summary').classList.remove('visible');renderLog();
+ });
+ // Metrónomo independiente: 100 señales por minuto (600 ms entre señales).
+ let beatTimer=null,audioCtx=null,beatOn=false;const beatBtn=document.getElementById('beat');
+ function clickSound(){try{const C=window.AudioContext||window.webkitAudioContext;if(C){if(!audioCtx)audioCtx=new C();if(audioCtx.state==='suspended')audioCtx.resume();const osc=audioCtx.createOscillator(),gain=audioCtx.createGain();osc.type='square';osc.frequency.value=1050;gain.gain.setValueAtTime(.0001,audioCtx.currentTime);gain.gain.exponentialRampToValueAtTime(.22,audioCtx.currentTime+.006);gain.gain.exponentialRampToValueAtTime(.0001,audioCtx.currentTime+.055);osc.connect(gain);gain.connect(audioCtx.destination);osc.start();osc.stop(audioCtx.currentTime+.06);}}catch(e){}if(navigator.vibrate)navigator.vibrate(25);}
+ function toggleBeat(){if(beatOn){clearInterval(beatTimer);beatTimer=null;beatOn=false;beatBtn.classList.remove('active');beatBtn.setAttribute('aria-pressed','false');beatBtn.innerHTML='▶ INICIAR RITMO 100/MIN<small>Pitido regular cada 0,6 segundos</small>';return;}beatOn=true;clickSound();beatTimer=setInterval(clickSound,600);beatBtn.classList.add('active');beatBtn.setAttribute('aria-pressed','true');beatBtn.innerHTML='■ DETENER RITMO<small>100 señales por minuto · activo</small>';}
+ beatBtn.addEventListener('click',toggleBeat);
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&(rcpActive||mode==='countdown')){if(mode==='countdown'&&Date.now()-countdownStartedAt>=120000){mode='idle';beep();addLog('Fin de intervalo',stamp(Date.now()),'02:00');}draw();}});
+})();
+</script>
+</body>
+</html>
